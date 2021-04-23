@@ -8,7 +8,7 @@ import com.sksamuel.elastic4s.circe.indexableWithCirce
 import com.sksamuel.elastic4s.http.JavaClient
 import com.sksamuel.elastic4s.zio.instances._
 import com.sksamuel.elastic4s.{ElasticClient, ElasticProperties}
-import zio.{Has, IO, Task, URLayer, ZIO, ZLayer}
+import zio.{Has, IO, RLayer, Task, ZIO, ZLayer}
 
 import scala.util.Try
 
@@ -22,18 +22,18 @@ object QcResultsRepo {
     ): IO[QcResultsRepoErr, Unit]
   }
 
-  val elasticSearch: URLayer[Has[ElasticSearchConfig], QcResultsRepo] =
-    ZLayer.fromService(
-      esConfig =>
-        new Service {
+  val elasticSearch: RLayer[Has[ElasticSearchConfig], QcResultsRepo] =
+    ZLayer.fromServiceM { esConfig =>
+      for {
+        client <- esConfig.getClient
+        svc = new Service {
           override def getLatestQcs: IO[QcResultsRepoErr, List[QcRun]] =
             IO.fail(QcResultsRepoErr("Oh no!!", None)) // TODO: Implement me
           override def saveCheckSuiteResult(
             checksSuiteResult: ChecksSuiteResult
           ): IO[QcResultsRepoErr, Unit] = {
+            val index = esConfig.qcResultsIndex
             (for {
-              client <- esConfig.getClient
-              index = esConfig.qcResultsIndex
               res <- client
                 .execute(indexInto(index).doc(checksSuiteResult))
                 .map(_ => ())
@@ -45,8 +45,9 @@ object QcResultsRepo {
               )
             )
           }
-      }
-    )
+        }
+      } yield svc
+    }
 
   def getLatestQcs: ZIO[QcResultsRepo, QcResultsRepoErr, List[QcRun]] =
     ZIO.accessM(_.get.getLatestQcs)

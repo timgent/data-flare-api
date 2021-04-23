@@ -36,7 +36,7 @@ object Main extends zio.App {
         err => putStrLn(err.prettyPrint).as(ExitCode.failure),
         _ => ZIO.succeed(ExitCode.success)
       )
-      .provideCustomLayer[ReadError[String], AppEnvironment](
+      .provideCustomLayer[Throwable, AppEnvironment](
         (configZlayer >>> QcResultsRepo.elasticSearch) ++ logging
       )
 
