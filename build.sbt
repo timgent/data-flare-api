@@ -26,7 +26,12 @@ lazy val root = (project in file("."))
       "dev.zio" %% "zio-test" % zioVersion % Test,
       "dev.zio" %% "zio-test-sbt" % zioVersion % Test,
       "dev.zio" %% "zio-test-magnolia" % zioVersion % Test,
-      "com.github.timgent" %% "data-flare" % "2.4.5_0.1.14-SNAPSHOT"
+      "com.github.timgent" %% "data-flare" % "2.4.5_0.1.14-SNAPSHOT", // TODO: Publish this version!!
+      "com.sksamuel.elastic4s" % "elastic4s-core_2.12" % "7.12.0",
+      "com.sksamuel.elastic4s" % "elastic4s-client-esjava_2.12" % "7.12.0",
+      "com.sksamuel.elastic4s" %% "elastic4s-effect-zio" % "7.12.0",
+      "dev.zio" %% "zio-config" % "1.0.4",
+      "dev.zio" %% "zio-config-magnolia" % "1.0.4"
     ),
     addCompilerPlugin("org.typelevel" %% "kind-projector" % "0.10.3"),
     addCompilerPlugin("com.olegpy" %% "better-monadic-for" % "0.3.1"),

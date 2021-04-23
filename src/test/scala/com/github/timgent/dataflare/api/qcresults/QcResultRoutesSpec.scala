@@ -1,24 +1,57 @@
 package com.github.timgent.dataflare.api.qcresults
 
-import org.http4s.implicits.http4sLiteralsSyntax
-import org.http4s.{Method, Request}
-import zio.Task
+import com.github.timgent.dataflare.api.qcresults.Encoders.checksSuiteResultsEntityEncoder
+import com.github.timgent.dataflare.api.qcresults.QcResultsRepo.QcResultsRepo
+import com.github.timgent.dataflare.api.utils.Mocks
+import com.github.timgent.dataflare.checkssuite.{
+  CheckSuiteStatus,
+  ChecksSuiteResult
+}
+import org.http4s.implicits.{
+  http4sKleisliResponseSyntaxOptionT,
+  http4sLiteralsSyntax
+}
+import org.http4s.{Method, Request, Status}
+import zio.interop.catz.monadErrorInstance
+import zio.logging.Logging
+import zio.test.Assertion.equalTo
 import zio.test.environment.TestEnvironment
-import zio.test.{DefaultRunnableSpec, ZSpec}
+import zio.test.{DefaultRunnableSpec, ZSpec, assert}
+import zio.{RIO, ZLayer}
+
+import java.time.Instant
 
 object QcResultRoutesSpec extends DefaultRunnableSpec {
   def spec: ZSpec[TestEnvironment, Any] =
     suite("QcResultRoutes")(
-      testM("GET /qcresults/latest should get the latest QC Results") {
-        val getHW = Request[Task](Method.GET, uri"/qcresults/latest")
-        println(getHW)
-//        val helloWorld: HelloWorld = HelloWorld.impl
-//        val retHelloWorld: Task[Response[Task]] =
-//          DataflareapiRoutes.helloWorldRoutes(helloWorld).orNotFound(getHW)
-//        for {
-//          res <- retHelloWorld
-//        } yield assert(res.status)(equalTo(Status.Ok))
-        ???
+      testM("POST /qcresults should insert QC results to ElasticSearch") {
+        val elasticSearch =
+          ZLayer.succeed(
+            ElasticSearchConfig(List("http://127.0.0.1:9200"), "test-index")
+          )
+        val qcResultsRepo = elasticSearch >>> QcResultsRepo.elasticSearch
+        val moo = QcResultsRoutes.qcResultsRoutes.orNotFound
+          .run(
+            Request[RIO[QcResultsRepo with Logging, *]](
+              Method.POST,
+              uri"/qcresults",
+            ).withEntity(
+              ChecksSuiteResult(
+                CheckSuiteStatus.Success,
+                "checkSuiteDescription",
+                Seq.empty,
+                Instant.now,
+                Map.empty
+              )
+            )
+          )
+          .map(_.status)
+          .provideCustomLayer(qcResultsRepo ++ Mocks.mockLogger)
+
+        val assertion = for {
+          route <- moo
+        } yield assert(route)(equalTo(Status.Ok))
+        assertion
       }
     )
 }

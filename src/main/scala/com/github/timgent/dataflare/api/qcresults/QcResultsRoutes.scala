@@ -1,6 +1,5 @@
 package com.github.timgent.dataflare.api.qcresults
 
-import com.github.timgent.dataflare.api.error.ApiError
 import com.github.timgent.dataflare.api.qcresults.QcResultsRepo.QcResultsRepo
 import com.github.timgent.dataflare.checkssuite.ChecksSuiteResult
 import com.github.timgent.dataflare.json.CustomEncodings.checksSuiteResultDecoder
@@ -10,25 +9,28 @@ import org.http4s.circe.CirceEntityCodec.{
   circeEntityEncoder
 }
 import org.http4s.dsl.Http4sDsl
+import zio.RIO
 import zio.interop.catz.taskConcurrentInstance
-import zio.{RIO, ZIO}
+import zio.logging._
 
 object QcResultsRoutes {
-  def getUser(id: Int): ZIO[UserPersistence, ApiError, User] = ???
-
-  val dsl = new Http4sDsl[RIO[QcResultsRepo, *]] {}
+  val dsl = new Http4sDsl[RIO[QcResultsRepo with Logging, *]] {}
   import dsl._
 
-  val getLatestResultsRoute: HttpRoutes[RIO[QcResultsRepo, *]] = HttpRoutes
-    .of[RIO[QcResultsRepo, *]] {
+  val qcResultsRoutes = HttpRoutes
+    .of[RIO[QcResultsRepo with Logging, *]] {
       case GET -> Root / "qcresults" =>
         QcResultsRepo.getLatestQcs
           .foldM(
-            _ =>
-              // TODO: Give a nicer error for an API user, probably depending on the error received
-              InternalServerError(
-                s"An internal server error occurred".stripMargin
-            ),
+            e =>
+              for {
+                _ <- e.logErr
+                res <- InternalServerError(
+                  s"An internal server error occurred, ${e.message}".stripMargin
+                )
+              } yield res
+            // TODO: Give a nicer error for an API user, probably depending on the error received
+            ,
             Ok(_)
           )
       case req @ POST -> Root / "qcresults" =>
@@ -37,10 +39,15 @@ object QcResultsRoutes {
           res <- QcResultsRepo
             .saveChecksSuiteResult(checksSuiteResult)
             .foldM(
-              _ => // TODO: Give a nicer error for an API user, probably depending on the error received
-                InternalServerError(
-                  s"An internal server error occurred".stripMargin
-              ),
+              e =>
+                for {
+                  _ <- e.logErr
+                  res <- InternalServerError(
+                    s"An internal server error occurred".stripMargin
+                  )
+                } yield res
+              // TODO: Give a nicer error for an API user, probably depending on the error received
+              ,
               Ok(_)
             )
         } yield res
