@@ -15,21 +15,24 @@ import org.http4s.{Method, Request, Status}
 import zio.interop.catz.monadErrorInstance
 import zio.logging.Logging
 import zio.test.Assertion.equalTo
-import zio.test.environment.TestEnvironment
-import zio.test.{DefaultRunnableSpec, ZSpec, assert}
-import zio.{RIO, ZLayer}
+import zio.test._
+import zio.{Cause, RIO, ZEnv, ZLayer}
 
 import java.time.Instant
 
 object QcResultRoutesSpec extends DefaultRunnableSpec {
-  def spec: ZSpec[TestEnvironment, Any] =
-    suite("QcResultRoutes")(
+  def spec: Spec[ZEnv, TestFailure[Throwable], TestSuccess] = {
+    val elasticSearch =
+      ZLayer.succeed(
+        ElasticSearchConfig(List("http://127.0.0.1:9200"), "test-index")
+      )
+    val qcResultsRepo
+      : ZLayer[Any, TestFailure.Runtime[Nothing], QcResultsRepo] =
+      (elasticSearch >>> QcResultsRepo.elasticSearch)
+        .mapError(t => TestFailure.Runtime(Cause.die(t)))
+
+    suite("QcResultRoutes") {
       testM("POST /qcresults should insert QC results to ElasticSearch") {
-        val elasticSearch =
-          ZLayer.succeed(
-            ElasticSearchConfig(List("http://127.0.0.1:9200"), "test-index")
-          )
-        val qcResultsRepo = elasticSearch >>> QcResultsRepo.elasticSearch
         for {
           route <- QcResultsRoutes.qcResultsRoutes.orNotFound
             .run(
@@ -47,8 +50,8 @@ object QcResultRoutesSpec extends DefaultRunnableSpec {
               )
             )
             .map(_.status)
-            .provideCustomLayer(qcResultsRepo ++ Mocks.mockLogger)
         } yield assert(route)(equalTo(Status.Ok))
       }
-    )
+    }.provideSomeLayer[ZEnv](qcResultsRepo ++ Mocks.mockLogger)
+  }
 }
