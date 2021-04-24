@@ -30,28 +30,25 @@ object QcResultRoutesSpec extends DefaultRunnableSpec {
             ElasticSearchConfig(List("http://127.0.0.1:9200"), "test-index")
           )
         val qcResultsRepo = elasticSearch >>> QcResultsRepo.elasticSearch
-        val moo = QcResultsRoutes.qcResultsRoutes.orNotFound
-          .run(
-            Request[RIO[QcResultsRepo with Logging, *]](
-              Method.POST,
-              uri"/qcresults",
-            ).withEntity(
-              ChecksSuiteResult(
-                CheckSuiteStatus.Success,
-                "checkSuiteDescription",
-                Seq.empty,
-                Instant.now,
-                Map.empty
+        for {
+          route <- QcResultsRoutes.qcResultsRoutes.orNotFound
+            .run(
+              Request[RIO[QcResultsRepo with Logging, *]](
+                Method.POST,
+                uri"/qcresults",
+              ).withEntity(
+                ChecksSuiteResult(
+                  CheckSuiteStatus.Success,
+                  "checkSuiteDescription",
+                  Seq.empty,
+                  Instant.now,
+                  Map.empty
+                )
               )
             )
-          )
-          .map(_.status)
-          .provideCustomLayer(qcResultsRepo ++ Mocks.mockLogger)
-
-        val assertion = for {
-          route <- moo
+            .map(_.status)
+            .provideCustomLayer(qcResultsRepo ++ Mocks.mockLogger)
         } yield assert(route)(equalTo(Status.Ok))
-        assertion
       }
     )
 }
