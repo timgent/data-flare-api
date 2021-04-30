@@ -15,17 +15,13 @@ import scala.concurrent.ExecutionContext.global
 object DataflareapiServer {
   type AppEnvironment = QcResultsRepo with Logging
   type AppTask[A] = RIO[AppEnvironment, A]
-  def stream(
-    implicit T: Timer[AppTask],
-    concurrentEffect: ConcurrentEffect[AppTask]
+  def stream(implicit
+      T: Timer[AppTask],
+      concurrentEffect: ConcurrentEffect[AppTask]
   ): Stream[AppTask, Nothing] = {
-    // Combine Service Routes into an HttpApp.
-    // Can also be done via a Router if you
-    // want to extract a segments not checked
-    // in the underlying routes.
     val httpApp = QcResultsRoutes.qcResultsRoutes.orNotFound
 
-    // With Middlewares in place
+    // With Middlewares in place for logging
     val finalHttpApp = Logger.httpApp(true, true)(httpApp)
     for {
       exitCode <- BlazeServerBuilder[AppTask](global)
