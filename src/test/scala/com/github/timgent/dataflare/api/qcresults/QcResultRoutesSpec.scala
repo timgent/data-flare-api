@@ -3,7 +3,7 @@ package com.github.timgent.dataflare.api.qcresults
 import cats.implicits.toTraverseOps
 import com.github.timgent.dataflare.api.qcresults.Encoders.checksSuiteResultsEntityEncoder
 import com.github.timgent.dataflare.api.qcresults.QcResultsRepo.QcResultsRepo
-import com.github.timgent.dataflare.api.utils.Mocks
+import com.github.timgent.dataflare.api.utils.{Mocks, WithId}
 import com.github.timgent.dataflare.checkssuite.{CheckSuiteStatus, ChecksSuiteResult}
 import com.sksamuel.elastic4s.testkit.DockerTests
 import org.http4s.circe.CirceEntityCodec.circeEntityDecoder
@@ -15,7 +15,7 @@ import zio.test.Assertion.equalTo
 import zio.test.TestAspect.timeout
 import zio.test._
 import zio.{Cause, RIO, ZIO, ZLayer}
-
+import com.github.timgent.dataflare.api.json.CustomEncodersDecoders.withIdDecoder
 import java.time.{Duration, Instant, LocalDateTime, ZoneOffset}
 
 object QcResultRoutesSpec extends DefaultRunnableSpec with DockerTests {
@@ -55,24 +55,24 @@ object QcResultRoutesSpec extends DefaultRunnableSpec with DockerTests {
 
       testWithCleanIndexM("GET /qcresults/latest should fetch the latest QC result for each distinct checkSuiteDescription") {
         val checkSuiteResults = List(
-          ChecksSuiteResult(CheckSuiteStatus.Success, "checkSuiteA", Seq.empty, today, Map.empty),
-          ChecksSuiteResult(CheckSuiteStatus.Success, "checkSuiteA", Seq.empty, yesterday, Map.empty),
-          ChecksSuiteResult(CheckSuiteStatus.Success, "checkSuiteA", Seq.empty, twoDaysAgo, Map.empty),
-          ChecksSuiteResult(CheckSuiteStatus.Success, "checkSuiteB", Seq.empty, twoDaysAgo, Map.empty),
-          ChecksSuiteResult(CheckSuiteStatus.Error, "checkSuiteB", Seq.empty, yesterday, Map.empty)
+          WithId("1", ChecksSuiteResult(CheckSuiteStatus.Success, "checkSuiteA", Seq.empty, today, Map.empty)),
+          WithId("2", ChecksSuiteResult(CheckSuiteStatus.Success, "checkSuiteA", Seq.empty, yesterday, Map.empty)),
+          WithId("3", ChecksSuiteResult(CheckSuiteStatus.Success, "checkSuiteA", Seq.empty, twoDaysAgo, Map.empty)),
+          WithId("4", ChecksSuiteResult(CheckSuiteStatus.Success, "checkSuiteB", Seq.empty, twoDaysAgo, Map.empty)),
+          WithId("5", ChecksSuiteResult(CheckSuiteStatus.Error, "checkSuiteB", Seq.empty, yesterday, Map.empty))
         )
         val expectedQcRuns = List(
-          QcRun("checkSuiteA", CheckSuiteStatus.Success, today),
-          QcRun("checkSuiteB", CheckSuiteStatus.Error, yesterday)
+          WithId("1", QcRun("checkSuiteA", CheckSuiteStatus.Success, today)),
+          WithId("5", QcRun("checkSuiteB", CheckSuiteStatus.Error, yesterday))
         )
         for {
           repo <- ZIO.access[QcResultsRepo](_.get)
-          _ <- checkSuiteResults.traverse(repo.saveCheckSuiteResult)
+          _ <- checkSuiteResults.traverse(repo.saveCheckSuiteResultWithId)
           res <-
             QcResultsRoutes.qcResultsRoutes.orNotFound
               .run(Request(Method.GET, uri"/qcresults/latest"))
               .repeatUntilM(_.as[List[QcRun]].either.map(e => e.isRight && e.right.get.nonEmpty))
-          body <- res.as[List[QcRun]]
+          body <- res.as[List[WithId[QcRun]]]
         } yield assert(res.status)(equalTo(Status.Ok)) && assert(body)(equalTo(expectedQcRuns))
       } @@ timeout(Duration.ofSeconds(5))
     }.provideCustomLayer(qcResultsRepo ++ Mocks.mockLogger)

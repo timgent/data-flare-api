@@ -3,6 +3,7 @@ package com.github.timgent.dataflare.api.qcresults
 import cats.implicits._
 import com.github.timgent.dataflare.api.error.QcResultsRepoErr
 import com.github.timgent.dataflare.api.qcresults.QcRun.checkSuiteDescriptionField
+import com.github.timgent.dataflare.api.utils.WithId
 import com.github.timgent.dataflare.checkssuite.ChecksSuiteResult
 import com.github.timgent.dataflare.json.CustomEncodings.{checksSuiteResultDecoder, checksSuiteResultEncoder}
 import com.sksamuel.elastic4s.ElasticApi.{createIndex, deleteIndex, keywordField, matchAllQuery, properties, termsAgg, topHitsAgg}
@@ -27,10 +28,14 @@ object QcResultsRepo {
     def delQcResultsIndex: IO[QcResultsRepoErr, Unit]
     def createQcResultsIndex: IO[QcResultsRepoErr, Response[CreateIndexResponse]]
     def getAllCheckSuiteResults: IO[QcResultsRepoErr, List[ChecksSuiteResult]]
-    def getLatestQcs: IO[QcResultsRepoErr, List[QcRun]]
+    def getLatestQcs: IO[QcResultsRepoErr, List[WithId[QcRun]]]
     def saveCheckSuiteResult(
-        checksSuiteResult: ChecksSuiteResult
+        checksSuiteResult: ChecksSuiteResult,
+        id: Option[String] = None
     ): IO[QcResultsRepoErr, Unit]
+    def saveCheckSuiteResultWithId(
+        checksSuiteResultWithId: WithId[ChecksSuiteResult]
+    ): IO[QcResultsRepoErr, Unit] = saveCheckSuiteResult(checksSuiteResultWithId.value, Some(checksSuiteResultWithId.id))
   }
 
   val elasticSearch: RLayer[Has[ElasticSearchConfig], QcResultsRepo] =
@@ -67,7 +72,7 @@ object QcResultsRepo {
               checkSuiteResults = res.result.hits.hits.map(_.to[ChecksSuiteResult]).toList
             } yield checkSuiteResults
 
-          override def getLatestQcs: IO[QcResultsRepoErr, List[QcRun]] = {
+          override def getLatestQcs: IO[QcResultsRepoErr, List[WithId[QcRun]]] = {
             val checkSuiteDescriptions = "checkSuiteDescriptions"
             for {
               res <- client.execute(
@@ -80,14 +85,13 @@ object QcResultsRepo {
               )
               agg = res.result.aggregations.result[Terms](checkSuiteDescriptions)
               tophits = agg.buckets.map(_.result[TopHits]("latestQcRun"))
-              qcRuns <- IO.fromTry(tophits.flatMap(_.hits.map(_.safeTo[QcRun])).toList.traverse(identity))
+              qcRuns <- IO.fromTry(tophits.flatMap(_.hits.map(hit => hit.safeTo[QcRun].map(WithId(hit.id, _)))).toList.traverse(identity))
             } yield qcRuns
           }.mapError(e => QcResultsRepoErr("Could not get latest QCs", Some(e)))
 
-          override def saveCheckSuiteResult(checksSuiteResult: ChecksSuiteResult): IO[QcResultsRepoErr, Unit] = {
-            val index = esConfig.qcResultsIndex
+          override def saveCheckSuiteResult(checksSuiteResult: ChecksSuiteResult, id: Option[String]): IO[QcResultsRepoErr, Unit] = {
             val queryResult = for {
-              res <- client.execute(indexInto(index).doc(checksSuiteResult)).map(_ => ())
+              res <- client.execute(indexInto(esConfig.qcResultsIndex).copy(id = id).doc(checksSuiteResult)).map(_ => ())
             } yield res
             queryResult.mapError(e => QcResultsRepoErr(s"Could not save doc $checksSuiteResult to index", Some(e)))
           }
@@ -95,7 +99,7 @@ object QcResultsRepo {
       } yield svc
     }
 
-  def getLatestQcs: ZIO[QcResultsRepo, QcResultsRepoErr, List[QcRun]] =
+  def getLatestQcs: ZIO[QcResultsRepo, QcResultsRepoErr, List[WithId[QcRun]]] =
     ZIO.accessM(_.get.getLatestQcs)
 
   def saveChecksSuiteResult(

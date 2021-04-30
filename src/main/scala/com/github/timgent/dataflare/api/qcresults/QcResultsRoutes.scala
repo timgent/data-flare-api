@@ -1,6 +1,7 @@
 package com.github.timgent.dataflare.api.qcresults
 
 import com.github.timgent.dataflare.api.error.QcResultsRepoErr
+import com.github.timgent.dataflare.api.json.CustomEncodersDecoders.withIdEncoder
 import com.github.timgent.dataflare.api.qcresults.QcResultsRepo.QcResultsRepo
 import com.github.timgent.dataflare.checkssuite.ChecksSuiteResult
 import com.github.timgent.dataflare.json.CustomEncodings.checksSuiteResultDecoder
