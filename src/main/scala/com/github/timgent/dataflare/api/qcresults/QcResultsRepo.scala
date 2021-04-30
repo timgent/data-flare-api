@@ -84,21 +84,12 @@ object QcResultsRepo {
             } yield qcRuns
           }.mapError(e => QcResultsRepoErr("Could not get latest QCs", Some(e)))
 
-          override def saveCheckSuiteResult(
-              checksSuiteResult: ChecksSuiteResult
-          ): IO[QcResultsRepoErr, Unit] = {
+          override def saveCheckSuiteResult(checksSuiteResult: ChecksSuiteResult): IO[QcResultsRepoErr, Unit] = {
             val index = esConfig.qcResultsIndex
-            (for {
-              res <-
-                client
-                  .execute(indexInto(index).doc(checksSuiteResult))
-                  .map(_ => ())
-            } yield res).mapError(e =>
-              QcResultsRepoErr(
-                s"Could not save doc $checksSuiteResult to index",
-                Some(e)
-              )
-            )
+            val queryResult = for {
+              res <- client.execute(indexInto(index).doc(checksSuiteResult)).map(_ => ())
+            } yield res
+            queryResult.mapError(e => QcResultsRepoErr(s"Could not save doc $checksSuiteResult to index", Some(e)))
           }
         }
       } yield svc

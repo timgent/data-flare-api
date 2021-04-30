@@ -1,10 +1,7 @@
 package com.github.timgent.dataflare.api
 
 import com.github.timgent.dataflare.api.DataflareapiServer.AppEnvironment
-import com.github.timgent.dataflare.api.qcresults.{
-  ElasticSearchConfig,
-  QcResultsRepo
-}
+import com.github.timgent.dataflare.api.qcresults.{ElasticSearchConfig, QcResultsRepo}
 import zio.config.magnolia.Descriptor._
 import zio.console.putStrLn
 import zio.interop.catz.implicits._
@@ -12,8 +9,6 @@ import zio.interop.catz.taskEffectInstance
 import zio.logging.{LogFormat, LogLevel, Logging}
 import zio.{ExitCode, IO, URIO, ZIO, ZLayer, system}
 import zio.config._
-
-case class Test(x: List[String])
 
 object Main extends zio.App {
   def run(args: List[String]): URIO[zio.ZEnv, zio.ExitCode] = {
@@ -44,7 +39,7 @@ object Main extends zio.App {
       err =>
         putStrLn(s"Execution failed with: $err") *> IO.succeed(
           ExitCode.failure
-      ),
+        ),
       _ => IO.succeed(ExitCode.success)
     )
   }
