@@ -1,6 +1,5 @@
 package com.github.timgent.dataflare.api.qcresults
 
-import com.github.timgent.dataflare.api.json.CustomDecoders.checkStatusDecoder
 import com.github.timgent.dataflare.checkssuite.CheckSuiteStatus
 import io.circe.generic.semiauto.{deriveDecoder, deriveEncoder}
 import io.circe.{Decoder, Encoder}
