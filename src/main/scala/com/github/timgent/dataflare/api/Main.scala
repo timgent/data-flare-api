@@ -18,29 +18,16 @@ object Main extends zio.App {
     ) >>> Logging.withRootLoggerName("data-flare-api")
     val config: ZIO[system.System, ReadError[String], ElasticSearchConfig] =
       for {
-        ses <- ConfigSource.fromSystemEnv
-        d <- ZIO.fromEither(read(descriptor[ElasticSearchConfig].from(ses)))
-      } yield d
-    val configZlayer = ZLayer.fromEffect(config)
-    val program = ZIO
+        configSource <- ConfigSource.fromSystemEnv
+        esConfig <- ZIO.fromEither(read(descriptor[ElasticSearchConfig].from(configSource)))
+      } yield esConfig
+    ZIO
       .runtime[AppEnvironment]
-      .flatMap { implicit runtime =>
-        DataflareapiServer.stream.compile.drain.as(ExitCode.success)
-      }
+      .flatMap(implicit runtime => DataflareapiServer.stream.compile.drain.as(ExitCode.success))
+      .provideCustomLayer((ZLayer.fromEffect(config) >>> QcResultsRepo.elasticSearch) ++ logging)
       .foldCauseM(
         err => putStrLn(err.prettyPrint).as(ExitCode.failure),
         _ => ZIO.succeed(ExitCode.success)
       )
-      .provideCustomLayer[Throwable, AppEnvironment](
-        (configZlayer >>> QcResultsRepo.elasticSearch) ++ logging
-      )
-
-    program.foldM(
-      err =>
-        putStrLn(s"Execution failed with: $err") *> IO.succeed(
-          ExitCode.failure
-        ),
-      _ => IO.succeed(ExitCode.success)
-    )
   }
 }
