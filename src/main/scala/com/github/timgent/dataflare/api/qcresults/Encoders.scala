@@ -9,7 +9,7 @@ import io.circe.Encoder
 import org.http4s.EntityEncoder
 import org.http4s.circe.jsonEncoderOf
 
-object Encoders {
+object EntityEncoders {
   implicit def checksSuiteResultsEntityEncoder[F[_]: Applicative]: EntityEncoder[F, ChecksSuiteResult] = jsonEncoderOf[F, ChecksSuiteResult]
 
   implicit def withIdEntityEncoder[F[_]: Applicative, T <: Product: Encoder]: EntityEncoder[F, WithId[T]] =
