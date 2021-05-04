@@ -30,7 +30,7 @@ object DataflareapiServer {
     val httpApp = CORS(QcResultsRoutes.qcResultsRoutes.orNotFound, cors)
 
     // With Middlewares in place for logging
-    val finalHttpApp = Logger.httpApp(true, true)(httpApp)
+    val finalHttpApp = Logger.httpApp(logHeaders = true, logBody = true)(httpApp)
     for {
       exitCode <- BlazeServerBuilder[AppTask](global)
         .bindHttp(8080, "0.0.0.0")
