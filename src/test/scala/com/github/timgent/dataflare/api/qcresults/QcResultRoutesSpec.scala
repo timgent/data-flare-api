@@ -40,7 +40,7 @@ object QcResultRoutesSpec extends DefaultRunnableSpec with DockerTests {
     val qcResultsRepo: ZLayer[Any, TestFailure.Runtime[Throwable], QcResultsRepo] =
       (elasticSearch >>> QcResultsRepo.elasticSearch).mapError(t => TestFailure.Runtime(Cause.die(t)))
 
-    suite("QcResultRoutes") {
+    suite("QcResultRoutes with ElasticSearch backend") {
       testWithCleanIndexM("POST /qcresults should insert QC results to ElasticSearch") {
         val checkSuiteResultToSave = ChecksSuiteResult(CheckSuiteStatus.Success, "checkSuiteDescription", Seq.empty, Instant.now, Map.empty)
         for {
