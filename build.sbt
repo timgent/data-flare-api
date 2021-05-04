@@ -39,7 +39,7 @@ lazy val root = (project in file("."))
       "dev.zio" %% "zio-test" % zioVersion % Test,
       "dev.zio" %% "zio-test-sbt" % zioVersion % Test,
       "dev.zio" %% "zio-test-magnolia" % zioVersion % Test,
-      "com.github.timgent" %% "data-flare" % "2.4.5_0.1.14-SNAPSHOT", // TODO: Publish this version!!
+      "com.github.timgent" %% "data-flare" % "2.4.5_0.1.14",
       "com.sksamuel.elastic4s" % "elastic4s-core_2.12" % elastic4sVersion,
       "com.sksamuel.elastic4s" % "elastic4s-client-esjava_2.12" % elastic4sVersion,
       "com.sksamuel.elastic4s" %% "elastic4s-effect-zio" % elastic4sVersion,
