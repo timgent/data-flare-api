@@ -83,7 +83,7 @@ object QcResultsRepo {
                   topHitsAgg("latestQcRun").size(1).sortBy(List(FieldSort("timestamp").order(SortOrder.Desc)))
                 )
               )
-              agg = res.result.aggregations.result[Terms](checkSuiteDescriptions)
+              agg <- ZIO.effect(res.result.aggregations.result[Terms](checkSuiteDescriptions))
               tophits = agg.buckets.map(_.result[TopHits]("latestQcRun"))
               qcRuns <- IO.fromTry(tophits.flatMap(_.hits.map(hit => hit.safeTo[QcRun].map(WithId(hit.id, _)))).toList.traverse(identity))
             } yield qcRuns

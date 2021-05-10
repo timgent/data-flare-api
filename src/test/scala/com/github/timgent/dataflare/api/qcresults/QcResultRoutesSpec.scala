@@ -1,7 +1,8 @@
 package com.github.timgent.dataflare.api.qcresults
 
 import cats.implicits.toTraverseOps
-import com.github.timgent.dataflare.api.qcresults.Encoders.checksSuiteResultsEntityEncoder
+import com.github.timgent.dataflare.api.json.CustomEncodersDecoders.withIdDecoder
+import com.github.timgent.dataflare.api.qcresults.EntityEncoders.checksSuiteResultsEntityEncoder
 import com.github.timgent.dataflare.api.qcresults.QcResultsRepo.QcResultsRepo
 import com.github.timgent.dataflare.api.utils.{Mocks, WithId}
 import com.github.timgent.dataflare.checkssuite.{CheckSuiteStatus, ChecksSuiteResult}
@@ -11,17 +12,29 @@ import org.http4s.implicits.{http4sKleisliResponseSyntaxOptionT, http4sLiteralsS
 import org.http4s.{Method, Request, Status}
 import zio.interop.catz.{monadErrorInstance, taskConcurrentInstance}
 import zio.logging.Logging
+import zio.random.Random
 import zio.test.Assertion.equalTo
 import zio.test.TestAspect.timeout
 import zio.test._
-import zio.{Cause, RIO, ZIO, ZLayer}
-import com.github.timgent.dataflare.api.json.CustomEncodersDecoders.withIdDecoder
+import zio.test.environment.TestEnvironment
+import zio.{Cause, Has, RIO, ZIO, ZLayer}
+
 import java.time.{Duration, Instant, LocalDateTime, ZoneOffset}
 
 object QcResultRoutesSpec extends DefaultRunnableSpec with DockerTests {
-
-  val testIndex = "test-index"
-  def testWithCleanIndexM[R, E](testName: String)(assertion: => ZIO[R, E, TestResult])(implicit loc: SourceLocation) = {
+  def nextRandomStr() = util.Random.alphanumeric.filter(_.isLetter).sliding(5).map(_.mkString.toLowerCase).next()
+  val timeoutSecs = 5
+  def testWithCleanIndexM[R, E](testName: String)(
+      assertion: => ZIO[R, E, TestResult]
+  )(implicit
+      loc: SourceLocation,
+      ev: TestEnvironment with QcResultsRepo with Logging with Has[ElasticSearchConfig] <:< R with QcResultsRepo with Has[
+        ElasticSearchConfig
+      ]
+  ) = {
+    val elasticSearch = ZLayer.succeed(ElasticSearchConfig(List("http://127.0.0.1:9200"), nextRandomStr()))
+    val qcResultsRepo: ZLayer[Random with Sized, TestFailure.Runtime[Nothing], QcResultsRepo] =
+      (elasticSearch >>> QcResultsRepo.elasticSearch).mapError(t => TestFailure.Runtime(Cause.die(t)))
     testM(testName) {
       for {
         repo <- ZIO.access[QcResultsRepo](_.get)
@@ -29,18 +42,14 @@ object QcResultRoutesSpec extends DefaultRunnableSpec with DockerTests {
         _ <- repo.createQcResultsIndex
         a <- assertion
       } yield a
-    }
+    }.provideCustomLayer(qcResultsRepo ++ Mocks.mockLogger ++ elasticSearch)
   }
   val today = LocalDateTime.now.toInstant(ZoneOffset.UTC)
   val yesterday = LocalDateTime.now.minusDays(1).toInstant(ZoneOffset.UTC)
   val twoDaysAgo = LocalDateTime.now.minusDays(2).toInstant(ZoneOffset.UTC)
 
   def spec = {
-    val elasticSearch = ZLayer.succeed(ElasticSearchConfig(List("http://127.0.0.1:9200"), testIndex))
-    val qcResultsRepo: ZLayer[Any, TestFailure.Runtime[Throwable], QcResultsRepo] =
-      (elasticSearch >>> QcResultsRepo.elasticSearch).mapError(t => TestFailure.Runtime(Cause.die(t)))
-
-    suite("QcResultRoutes with ElasticSearch backend") {
+    suite("QcResultRoutes")(
       testWithCleanIndexM("POST /qcresults should insert QC results to ElasticSearch") {
         val checkSuiteResultToSave = ChecksSuiteResult(CheckSuiteStatus.Success, "checkSuiteDescription", Seq.empty, Instant.now, Map.empty)
         for {
@@ -51,8 +60,7 @@ object QcResultRoutesSpec extends DefaultRunnableSpec with DockerTests {
           repo <- ZIO.access[QcResultsRepo](_.get)
           dbResults <- repo.getAllCheckSuiteResults.repeatUntil(r => r.nonEmpty)
         } yield assert(httpStatus)(equalTo(Status.Ok)) && assert(dbResults)(equalTo(List(checkSuiteResultToSave)))
-      } @@ timeout(Duration.ofSeconds(5))
-
+      } @@ timeout(Duration.ofSeconds(timeoutSecs)),
       testWithCleanIndexM("GET /qcresults/latest should fetch the latest QC result for each distinct checkSuiteDescription") {
         val checkSuiteResults = List(
           WithId("1", ChecksSuiteResult(CheckSuiteStatus.Success, "checkSuiteA", Seq.empty, today, Map.empty)),
@@ -74,7 +82,7 @@ object QcResultRoutesSpec extends DefaultRunnableSpec with DockerTests {
               .repeatUntilM(_.as[List[QcRun]].either.map(e => e.isRight && e.right.get.nonEmpty))
           body <- res.as[List[WithId[QcRun]]]
         } yield assert(res.status)(equalTo(Status.Ok)) && assert(body)(equalTo(expectedQcRuns))
-      } @@ timeout(Duration.ofSeconds(5))
-    }.provideCustomLayer(qcResultsRepo ++ Mocks.mockLogger)
+      } @@ timeout(Duration.ofSeconds(timeoutSecs))
+    )
   }
 }
