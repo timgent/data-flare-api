@@ -6,15 +6,6 @@ import io.circe.Decoder.Result
 import io.circe.{Decoder, Encoder, HCursor, Json}
 
 object CustomEncodersDecoders {
-  implicit val checkStatusDecoder: Decoder[CheckStatus] = {
-    Decoder.decodeString.emap(str =>
-      CheckStatus.lowerCaseNamesToValuesMap.get(str) match {
-        case Some(checkStatus) => Right(checkStatus)
-        case None              => Left(s"checkStatus of $str was not a valid check status. Use one of ${CheckStatus.values.toList}")
-      }
-    )
-  }
-
   implicit def withIdEncoder[T <: Product: Encoder]: Encoder[WithId[T]] =
     new Encoder[WithId[T]] {
       override def apply(a: WithId[T]): Json = {
