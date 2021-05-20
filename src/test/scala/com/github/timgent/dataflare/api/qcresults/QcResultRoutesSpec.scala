@@ -82,6 +82,31 @@ object QcResultRoutesSpec extends DefaultRunnableSpec with DockerTests {
               .repeatUntilM(_.as[List[QcRun]].either.map(e => e.isRight && e.right.get.nonEmpty))
           body <- res.as[List[WithId[QcRun]]]
         } yield assert(res.status)(equalTo(Status.Ok)) && assert(body)(equalTo(expectedQcRuns))
+      } @@ timeout(Duration.ofSeconds(timeoutSecs)),
+      testWithCleanIndexM(
+        "GET /qcresults?checkSuiteDescription=checkSuiteA should fetch only QC results for the given checkSuiteDescription"
+      ) {
+        val checkSuiteResults = List(
+          WithId("1", ChecksSuiteResult(CheckSuiteStatus.Success, "checkSuiteA", Seq.empty, today, Map.empty)),
+          WithId("2", ChecksSuiteResult(CheckSuiteStatus.Success, "checkSuiteA", Seq.empty, yesterday, Map.empty)),
+          WithId("3", ChecksSuiteResult(CheckSuiteStatus.Success, "checkSuiteA", Seq.empty, twoDaysAgo, Map.empty)),
+          WithId("4", ChecksSuiteResult(CheckSuiteStatus.Success, "checkSuiteB", Seq.empty, twoDaysAgo, Map.empty)),
+          WithId("5", ChecksSuiteResult(CheckSuiteStatus.Error, "checkSuiteB", Seq.empty, yesterday, Map.empty))
+        )
+        val expectedQcRuns = List(
+          WithId("1", QcRun("checkSuiteA", CheckSuiteStatus.Success, today)),
+          WithId("2", QcRun("checkSuiteA", CheckSuiteStatus.Success, yesterday)),
+          WithId("3", QcRun("checkSuiteA", CheckSuiteStatus.Success, twoDaysAgo))
+        )
+        for {
+          repo <- ZIO.access[QcResultsRepo](_.get)
+          _ <- checkSuiteResults.traverse(repo.saveCheckSuiteResultWithId)
+          res <-
+            QcResultsRoutes.qcResultsRoutes.orNotFound
+              .run(Request(Method.GET, uri"/qcresults?checkSuiteDescription=checkSuiteA"))
+              .repeatUntilM(_.as[List[QcRun]].either.map(maybeQcRun => maybeQcRun.isRight && maybeQcRun.right.get.nonEmpty))
+          body <- res.as[List[WithId[QcRun]]]
+        } yield assert(res.status)(equalTo(Status.Ok)) && assert(body)(equalTo(expectedQcRuns))
       } @@ timeout(Duration.ofSeconds(timeoutSecs))
     )
   }
