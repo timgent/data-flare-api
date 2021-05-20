@@ -29,6 +29,7 @@ object QcResultsRepo {
     def createQcResultsIndex: IO[QcResultsRepoErr, Response[CreateIndexResponse]]
     def getAllCheckSuiteResults: IO[QcResultsRepoErr, List[ChecksSuiteResult]]
     def getLatestQcs: IO[QcResultsRepoErr, List[WithId[QcRun]]]
+    def getQcsByDescription(description: String): IO[QcResultsRepoErr, List[WithId[QcRun]]]
     def saveCheckSuiteResult(
         checksSuiteResult: ChecksSuiteResult,
         id: Option[String] = None
@@ -43,6 +44,18 @@ object QcResultsRepo {
       for {
         client <- esConfig.getClient
         svc = new Service {
+
+          override def getQcsByDescription(description: String): IO[QcResultsRepoErr, List[WithId[QcRun]]] = {
+            for {
+              res <-
+                client
+                  .execute(
+                    search(esConfig.qcResultsIndex) matchQuery (QcRun.checkSuiteDescriptionField, description)
+                  )
+                  .mapError(e => QcResultsRepoErr(s"Couldn't get QcRuns for ${QcRun.checkSuiteDescriptionField} = '$description'", Some(e)))
+              checkSuiteResults = res.result.hits.hits.map(hit => WithId(hit.id, hit.to[QcRun])).toList
+            } yield checkSuiteResults
+          }
 
           override def createQcResultsIndex: IO[QcResultsRepoErr, Response[CreateIndexResponse]] =
             client
@@ -101,6 +114,9 @@ object QcResultsRepo {
 
   def getLatestQcs: ZIO[QcResultsRepo, QcResultsRepoErr, List[WithId[QcRun]]] =
     ZIO.accessM(_.get.getLatestQcs)
+
+  def getQcsByDescription(description: String): ZIO[QcResultsRepo, QcResultsRepoErr, List[WithId[QcRun]]] =
+    ZIO.accessM(_.get.getQcsByDescription(description))
 
   def saveChecksSuiteResult(
       checksSuiteResult: ChecksSuiteResult

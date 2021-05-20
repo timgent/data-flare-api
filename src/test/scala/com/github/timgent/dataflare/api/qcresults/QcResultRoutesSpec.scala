@@ -41,6 +41,7 @@ object QcResultRoutesSpec extends DefaultRunnableSpec with DockerTests {
         _ <- repo.delQcResultsIndex
         _ <- repo.createQcResultsIndex
         a <- assertion
+        _ <- repo.delQcResultsIndex
       } yield a
     }.provideCustomLayer(qcResultsRepo ++ Mocks.mockLogger ++ elasticSearch)
   }

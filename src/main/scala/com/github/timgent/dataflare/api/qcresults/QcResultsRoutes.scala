@@ -26,10 +26,14 @@ object QcResultsRoutes {
     .of[RIO[QcResultsRepo with Logging, *]] {
       case GET -> Root / "qcresults" / "latest" =>
         QcResultsRepo.getLatestQcs.foldM(logErrAndReturn500, Ok(_))
+      case GET -> Root / "qcresults" :? CheckSuiteDescriptionParamMatcher(checkSuiteDescription) =>
+        QcResultsRepo.getQcsByDescription(checkSuiteDescription).foldM(logErrAndReturn500, Ok(_))
       case req @ POST -> Root / "qcresults" =>
         for {
           checksSuiteResult <- req.as[ChecksSuiteResult]
           res <- QcResultsRepo.saveChecksSuiteResult(checksSuiteResult).foldM(logErrAndReturn500, Ok(_))
         } yield res
     }
+
+  private object CheckSuiteDescriptionParamMatcher extends QueryParamDecoderMatcher[String]("checkSuiteDescription")
 }
