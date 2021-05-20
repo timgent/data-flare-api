@@ -4,7 +4,7 @@ import com.github.timgent.dataflare.api.error.QcResultsRepoErr
 import com.github.timgent.dataflare.api.json.CustomEncodersDecoders.withIdEncoder
 import com.github.timgent.dataflare.api.qcresults.QcResultsRepo.QcResultsRepo
 import com.github.timgent.dataflare.checkssuite.ChecksSuiteResult
-import com.github.timgent.dataflare.json.CustomEncodings.checksSuiteResultDecoder
+import com.github.timgent.dataflare.json.CustomEncodings.{checksSuiteResultDecoder, checksSuiteResultEncoder}
 import org.http4s.HttpRoutes
 import org.http4s.circe.CirceEntityCodec.{circeEntityDecoder, circeEntityEncoder}
 import org.http4s.dsl.Http4sDsl
@@ -28,6 +28,16 @@ object QcResultsRoutes {
         QcResultsRepo.getLatestQcs.foldM(logErrAndReturn500, Ok(_))
       case GET -> Root / "qcresults" :? CheckSuiteDescriptionParamMatcher(checkSuiteDescription) =>
         QcResultsRepo.getQcsByDescription(checkSuiteDescription).foldM(logErrAndReturn500, Ok(_))
+      case GET -> Root / "qcresult" / id =>
+        QcResultsRepo
+          .getChecksSuiteResult(id)
+          .foldM(
+            logErrAndReturn500,
+            {
+              case Some(checkSuiteResults) => Ok(checkSuiteResults)
+              case None                    => NotFound()
+            }
+          )
       case req @ POST -> Root / "qcresults" =>
         for {
           checksSuiteResult <- req.as[ChecksSuiteResult]

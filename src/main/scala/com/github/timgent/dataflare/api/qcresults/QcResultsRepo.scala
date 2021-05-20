@@ -7,7 +7,15 @@ import com.github.timgent.dataflare.api.utils.WithId
 import com.github.timgent.dataflare.checkssuite.ChecksSuiteResult
 import com.github.timgent.dataflare.json.CustomEncodings.{checksSuiteResultDecoder, checksSuiteResultEncoder}
 import com.sksamuel.elastic4s.ElasticApi.{createIndex, deleteIndex, keywordField, matchAllQuery, properties, termsAgg, topHitsAgg}
-import com.sksamuel.elastic4s.ElasticDsl.{CreateIndexHandler, DeleteIndexHandler, IndexHandler, SearchHandler, indexInto, search}
+import com.sksamuel.elastic4s.ElasticDsl.{
+  CreateIndexHandler,
+  DeleteIndexHandler,
+  GetHandler,
+  IndexHandler,
+  SearchHandler,
+  indexInto,
+  search
+}
 import com.sksamuel.elastic4s.circe.{aggReaderWithCirce, hitReaderWithCirce, indexableWithCirce}
 import com.sksamuel.elastic4s.http.JavaClient
 import com.sksamuel.elastic4s.requests.indexes.CreateIndexResponse
@@ -16,7 +24,7 @@ import com.sksamuel.elastic4s.requests.searches.aggs.responses.bucket.Terms.Term
 import com.sksamuel.elastic4s.requests.searches.aggs.responses.metrics.TopHits
 import com.sksamuel.elastic4s.requests.searches.sort.{FieldSort, SortOrder}
 import com.sksamuel.elastic4s.zio.instances._
-import com.sksamuel.elastic4s.{ElasticClient, ElasticProperties, Response}
+import com.sksamuel.elastic4s.{ElasticApi, ElasticClient, ElasticProperties, Response}
 import zio.{Has, IO, RLayer, Task, ZIO, ZLayer}
 
 import scala.util.Try
@@ -30,6 +38,7 @@ object QcResultsRepo {
     def getAllCheckSuiteResults: IO[QcResultsRepoErr, List[ChecksSuiteResult]]
     def getLatestQcs: IO[QcResultsRepoErr, List[WithId[QcRun]]]
     def getQcsByDescription(description: String): IO[QcResultsRepoErr, List[WithId[QcRun]]]
+    def getChecksSuiteResult(id: String): IO[QcResultsRepoErr, Option[WithId[ChecksSuiteResult]]]
     def saveCheckSuiteResult(
         checksSuiteResult: ChecksSuiteResult,
         id: Option[String] = None
@@ -54,6 +63,18 @@ object QcResultsRepo {
                   )
                   .mapError(e => QcResultsRepoErr(s"Couldn't get QcRuns for ${QcRun.checkSuiteDescriptionField} = '$description'", Some(e)))
               checkSuiteResults = res.result.hits.hits.map(hit => WithId(hit.id, hit.to[QcRun])).toList
+            } yield checkSuiteResults
+          }
+
+          override def getChecksSuiteResult(id: String): IO[QcResultsRepoErr, Option[WithId[ChecksSuiteResult]]] = {
+            for {
+              res <-
+                client
+                  .execute(
+                    ElasticApi.get(esConfig.qcResultsIndex, id)
+                  )
+                  .mapError(e => QcResultsRepoErr(s"Error encountered when getting the ChecksSuiteResult for document id = '$id'", Some(e)))
+              checkSuiteResults = res.result.toOpt[ChecksSuiteResult].map(WithId(id, _))
             } yield checkSuiteResults
           }
 
@@ -117,6 +138,9 @@ object QcResultsRepo {
 
   def getQcsByDescription(description: String): ZIO[QcResultsRepo, QcResultsRepoErr, List[WithId[QcRun]]] =
     ZIO.accessM(_.get.getQcsByDescription(description))
+
+  def getChecksSuiteResult(id: String): ZIO[QcResultsRepo, QcResultsRepoErr, Option[WithId[ChecksSuiteResult]]] =
+    ZIO.accessM(_.get.getChecksSuiteResult(id))
 
   def saveChecksSuiteResult(
       checksSuiteResult: ChecksSuiteResult
