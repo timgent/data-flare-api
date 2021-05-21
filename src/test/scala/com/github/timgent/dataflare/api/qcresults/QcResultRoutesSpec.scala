@@ -170,6 +170,20 @@ object QcResultRoutesSpec extends DefaultRunnableSpec with DockerTests {
             QcResultsRoutes.qcResultsRoutes.orNotFound
               .run(Request(Method.GET, uri"/qcresult/notFoundId"))
         } yield assert(res.status)(equalTo(Status.NotFound))
+      } @@ timeout(Duration.ofSeconds(timeoutSecs)),
+      testWithCleanIndexM("DELETE /qcresults should delete chosen QC Results") {
+        val checkSuiteResults = List(
+          WithId("1", ChecksSuiteResult(CheckSuiteStatus.Success, "checkSuiteA", Seq.empty, today, Map.empty)),
+          WithId("2", ChecksSuiteResult(CheckSuiteStatus.Success, "checkSuiteA", Seq.empty, yesterday, Map.empty))
+        )
+
+        for {
+          repo <- ZIO.access[QcResultsRepo](_.get)
+          _ <- checkSuiteResults.traverse(repo.saveCheckSuiteResultWithId)
+          _ <- repo.getAllCheckSuiteResults.repeatUntil(_.size == checkSuiteResults.size)
+          _ <- QcResultsRoutes.qcResultsRoutes.orNotFound.run(Request(Method.DELETE, uri"/qcresults" / "1"))
+          finalResults <- repo.getAllCheckSuiteResults.repeatUntil(_.size == checkSuiteResults.size - 1)
+        } yield assert(finalResults)(equalTo(checkSuiteResults.filter(_.id != "1")))
       } @@ timeout(Duration.ofSeconds(timeoutSecs))
     )
 }

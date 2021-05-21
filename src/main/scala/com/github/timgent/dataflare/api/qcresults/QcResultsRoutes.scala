@@ -30,6 +30,8 @@ object QcResultsRoutes {
         QcResultsRepo.getLatestQcs.foldM(logErrAndReturn500, Ok(_))
       case GET -> Root / "qcresults" :? CheckSuiteDescriptionParamMatcher(checkSuiteDescription) =>
         QcResultsRepo.getQcsByDescription(checkSuiteDescription).foldM(logErrAndReturn500, Ok(_))
+      case DELETE -> Root / "qcresults" / id =>
+        QcResultsRepo.deleteQcResult(id).foldM(logErrAndReturn500, Ok(_))
       case GET -> Root / "qcresult" / id =>
         QcResultsRepo
           .getChecksSuiteResult(id)

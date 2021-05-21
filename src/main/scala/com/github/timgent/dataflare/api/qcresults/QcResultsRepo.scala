@@ -9,10 +9,12 @@ import com.github.timgent.dataflare.json.CustomEncodings.{checksSuiteResultDecod
 import com.sksamuel.elastic4s.ElasticApi.{createIndex, deleteIndex, keywordField, matchAllQuery, properties, termsAgg, topHitsAgg}
 import com.sksamuel.elastic4s.ElasticDsl.{
   CreateIndexHandler,
+  DeleteByIdHandler,
   DeleteIndexHandler,
   GetHandler,
   IndexHandler,
   SearchHandler,
+  deleteById,
   indexInto,
   search
 }
@@ -33,6 +35,7 @@ object QcResultsRepo {
   type QcResultsRepo = Has[QcResultsRepo.Service]
 
   trait Service {
+    def deleteQcResult(id: String): IO[QcResultsRepoErr, Unit]
     def delQcResultsIndex: IO[QcResultsRepoErr, Unit]
     def createQcResultsIndex: IO[QcResultsRepoErr, Response[CreateIndexResponse]]
     def getAllCheckSuiteResults: IO[QcResultsRepoErr, List[WithId[ChecksSuiteResult]]]
@@ -53,6 +56,15 @@ object QcResultsRepo {
       for {
         client <- esConfig.getClient
         svc = new Service {
+
+          override def deleteQcResult(id: String): IO[QcResultsRepoErr, Unit] = {
+            for {
+              res <-
+                client
+                  .execute(deleteById(esConfig.qcResultsIndex, id))
+                  .mapError(e => QcResultsRepoErr(s"Couldn't delete qcResult for id = $id", Some(e)))
+            } yield res
+          }
 
           override def getQcsByDescription(description: String): IO[QcResultsRepoErr, List[WithId[QcRun]]] = {
             for {
@@ -132,6 +144,9 @@ object QcResultsRepo {
         }
       } yield svc
     }
+
+  def deleteQcResult(id: String): ZIO[QcResultsRepo, QcResultsRepoErr, Unit] =
+    ZIO.accessM(_.get.deleteQcResult(id))
 
   def getAllCheckSuiteResults: ZIO[QcResultsRepo, QcResultsRepoErr, List[WithId[ChecksSuiteResult]]] =
     ZIO.accessM(_.get.getAllCheckSuiteResults)
