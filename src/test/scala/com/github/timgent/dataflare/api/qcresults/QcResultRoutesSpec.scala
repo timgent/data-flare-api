@@ -61,7 +61,7 @@ object QcResultRoutesSpec extends DefaultRunnableSpec with DockerTests {
               .map(_.status)
           repo <- ZIO.access[QcResultsRepo](_.get)
           dbResults <- repo.getAllCheckSuiteResults.repeatUntil(r => r.nonEmpty)
-        } yield assert(httpStatus)(equalTo(Status.Ok)) && assert(dbResults)(equalTo(List(checkSuiteResultToSave)))
+        } yield assert(httpStatus)(equalTo(Status.Ok)) && assert(dbResults.map(_.value))(equalTo(List(checkSuiteResultToSave)))
       } @@ timeout(Duration.ofSeconds(timeoutSecs)),
       testWithCleanIndexM("GET /qcresults/latest should fetch the latest QC result for each distinct checkSuiteDescription") {
         val checkSuiteResults = List(
@@ -84,6 +84,24 @@ object QcResultRoutesSpec extends DefaultRunnableSpec with DockerTests {
               .repeatUntilM(_.as[List[QcRun]].either.map(e => e.isRight && e.right.get.size == expectedQcRuns.size))
           body <- res.as[List[WithId[QcRun]]]
         } yield assert(res.status)(equalTo(Status.Ok)) && assert(body)(equalTo(expectedQcRuns))
+      } @@ timeout(Duration.ofSeconds(timeoutSecs)),
+      testWithCleanIndexM("GET /qcresults should fetch all QC results") {
+        val checkSuiteResults = List(
+          WithId("1", ChecksSuiteResult(CheckSuiteStatus.Success, "checkSuiteA", Seq.empty, today, Map.empty)),
+          WithId("2", ChecksSuiteResult(CheckSuiteStatus.Success, "checkSuiteA", Seq.empty, yesterday, Map.empty)),
+          WithId("3", ChecksSuiteResult(CheckSuiteStatus.Success, "checkSuiteA", Seq.empty, twoDaysAgo, Map.empty)),
+          WithId("4", ChecksSuiteResult(CheckSuiteStatus.Success, "checkSuiteB", Seq.empty, twoDaysAgo, Map.empty)),
+          WithId("5", ChecksSuiteResult(CheckSuiteStatus.Error, "checkSuiteB", Seq.empty, yesterday, Map.empty))
+        )
+        for {
+          repo <- ZIO.access[QcResultsRepo](_.get)
+          _ <- checkSuiteResults.traverse(repo.saveCheckSuiteResultWithId)
+          res <-
+            QcResultsRoutes.qcResultsRoutes.orNotFound
+              .run(Request(Method.GET, uri"/qcresults"))
+              .repeatUntilM(_.as[List[ChecksSuiteResult]].either.map(e => e.isRight && e.right.get.size == checkSuiteResults.size))
+          body <- res.as[List[WithId[ChecksSuiteResult]]]
+        } yield assert(res.status)(equalTo(Status.Ok)) && assert(body)(equalTo(checkSuiteResults))
       } @@ timeout(Duration.ofSeconds(timeoutSecs)),
       testWithCleanIndexM(
         "GET /qcresults?checkSuiteDescription=checkSuiteA should fetch only QC results for the given checkSuiteDescription"

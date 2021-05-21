@@ -35,7 +35,7 @@ object QcResultsRepo {
   trait Service {
     def delQcResultsIndex: IO[QcResultsRepoErr, Unit]
     def createQcResultsIndex: IO[QcResultsRepoErr, Response[CreateIndexResponse]]
-    def getAllCheckSuiteResults: IO[QcResultsRepoErr, List[ChecksSuiteResult]]
+    def getAllCheckSuiteResults: IO[QcResultsRepoErr, List[WithId[ChecksSuiteResult]]]
     def getLatestQcs: IO[QcResultsRepoErr, List[WithId[QcRun]]]
     def getQcsByDescription(description: String): IO[QcResultsRepoErr, List[WithId[QcRun]]]
     def getChecksSuiteResult(id: String): IO[QcResultsRepoErr, Option[WithId[ChecksSuiteResult]]]
@@ -97,13 +97,13 @@ object QcResultsRepo {
               .map(_ => ())
               .mapError(t => QcResultsRepoErr("Could not delete index", Some(t)))
 
-          override def getAllCheckSuiteResults: IO[QcResultsRepoErr, List[ChecksSuiteResult]] =
+          override def getAllCheckSuiteResults: IO[QcResultsRepoErr, List[WithId[ChecksSuiteResult]]] =
             for {
               res <-
                 client
                   .execute(search(esConfig.qcResultsIndex) query matchAllQuery)
                   .mapError(e => QcResultsRepoErr("Couldn't get all CheckSuiteResults", Some(e)))
-              checkSuiteResults = res.result.hits.hits.map(_.to[ChecksSuiteResult]).toList
+              checkSuiteResults = res.result.hits.hits.map(hit => WithId(hit.id, hit.to[ChecksSuiteResult])).toList
             } yield checkSuiteResults
 
           override def getLatestQcs: IO[QcResultsRepoErr, List[WithId[QcRun]]] = {
@@ -132,6 +132,9 @@ object QcResultsRepo {
         }
       } yield svc
     }
+
+  def getAllCheckSuiteResults: ZIO[QcResultsRepo, QcResultsRepoErr, List[WithId[ChecksSuiteResult]]] =
+    ZIO.accessM(_.get.getAllCheckSuiteResults)
 
   def getLatestQcs: ZIO[QcResultsRepo, QcResultsRepoErr, List[WithId[QcRun]]] =
     ZIO.accessM(_.get.getLatestQcs)

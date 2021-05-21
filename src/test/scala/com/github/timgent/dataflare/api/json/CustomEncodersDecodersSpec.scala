@@ -2,6 +2,8 @@ package com.github.timgent.dataflare.api.json
 
 import com.github.timgent.dataflare.api.json.CustomEncodersDecoders.{withIdDecoder, withIdEncoder}
 import com.github.timgent.dataflare.api.utils.WithId
+import com.github.timgent.dataflare.checkssuite.ChecksSuiteResult
+import com.github.timgent.dataflare.json.CustomEncodings.checksSuiteResultDecoder
 import io.circe.generic.semiauto.{deriveDecoder, deriveEncoder}
 import io.circe.parser._
 import io.circe.syntax._

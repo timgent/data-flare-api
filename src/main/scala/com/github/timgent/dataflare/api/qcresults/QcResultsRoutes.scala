@@ -24,6 +24,8 @@ object QcResultsRoutes {
 
   val qcResultsRoutes = HttpRoutes
     .of[RIO[QcResultsRepo with Logging, *]] {
+      case GET -> Root / "qcresults" =>
+        QcResultsRepo.getAllCheckSuiteResults.foldM(logErrAndReturn500, Ok(_))
       case GET -> Root / "qcresults" / "latest" =>
         QcResultsRepo.getLatestQcs.foldM(logErrAndReturn500, Ok(_))
       case GET -> Root / "qcresults" :? CheckSuiteDescriptionParamMatcher(checkSuiteDescription) =>
