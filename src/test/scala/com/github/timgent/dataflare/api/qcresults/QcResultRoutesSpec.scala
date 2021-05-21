@@ -14,7 +14,7 @@ import org.http4s.{Method, Request, Status}
 import zio.interop.catz.{monadErrorInstance, taskConcurrentInstance}
 import zio.logging.Logging
 import zio.random.Random
-import zio.test.Assertion.equalTo
+import zio.test.Assertion.{equalTo, hasSameElements}
 import zio.test.TestAspect.timeout
 import zio.test._
 import zio.test.environment.TestEnvironment
@@ -61,7 +61,7 @@ object QcResultRoutesSpec extends DefaultRunnableSpec with DockerTests {
               .map(_.status)
           repo <- ZIO.access[QcResultsRepo](_.get)
           dbResults <- repo.getAllCheckSuiteResults.repeatUntil(r => r.nonEmpty)
-        } yield assert(httpStatus)(equalTo(Status.Ok)) && assert(dbResults.map(_.value))(equalTo(List(checkSuiteResultToSave)))
+        } yield assert(httpStatus)(equalTo(Status.Ok)) && assert(dbResults.map(_.value))(hasSameElements(List(checkSuiteResultToSave)))
       } @@ timeout(Duration.ofSeconds(timeoutSecs)),
       testWithCleanIndexM("GET /qcresults/latest should fetch the latest QC result for each distinct checkSuiteDescription") {
         val checkSuiteResults = List(
@@ -101,21 +101,21 @@ object QcResultRoutesSpec extends DefaultRunnableSpec with DockerTests {
               .run(Request(Method.GET, uri"/qcresults"))
               .repeatUntilM(_.as[List[ChecksSuiteResult]].either.map(e => e.isRight && e.right.get.size == checkSuiteResults.size))
           body <- res.as[List[WithId[ChecksSuiteResult]]]
-        } yield assert(res.status)(equalTo(Status.Ok)) && assert(body)(equalTo(checkSuiteResults))
+        } yield assert(res.status)(equalTo(Status.Ok)) && assert(body)(hasSameElements(checkSuiteResults))
       } @@ timeout(Duration.ofSeconds(timeoutSecs)),
       testWithCleanIndexM(
         "GET /qcresults?checkSuiteDescription=checkSuiteA should fetch only QC results for the given checkSuiteDescription"
       ) {
         val checkSuiteResults = List(
-          WithId("1", ChecksSuiteResult(CheckSuiteStatus.Success, "checkSuiteA", Seq.empty, today, Map.empty)),
-          WithId("2", ChecksSuiteResult(CheckSuiteStatus.Success, "checkSuiteA", Seq.empty, yesterday, Map.empty)),
+          WithId("1", ChecksSuiteResult(CheckSuiteStatus.Success, "checkSuiteA", Seq.empty, yesterday, Map.empty)),
+          WithId("2", ChecksSuiteResult(CheckSuiteStatus.Success, "checkSuiteA", Seq.empty, today, Map.empty)),
           WithId("3", ChecksSuiteResult(CheckSuiteStatus.Success, "checkSuiteA", Seq.empty, twoDaysAgo, Map.empty)),
           WithId("4", ChecksSuiteResult(CheckSuiteStatus.Success, "checkSuiteB", Seq.empty, twoDaysAgo, Map.empty)),
           WithId("5", ChecksSuiteResult(CheckSuiteStatus.Error, "checkSuiteB", Seq.empty, yesterday, Map.empty))
         )
-        val expectedQcRuns = List(
-          WithId("1", QcRun("checkSuiteA", CheckSuiteStatus.Success, today)),
-          WithId("2", QcRun("checkSuiteA", CheckSuiteStatus.Success, yesterday)),
+        val expectedQcRuns = List( // order of results should be via timestamp, not ID
+          WithId("2", QcRun("checkSuiteA", CheckSuiteStatus.Success, today)),
+          WithId("1", QcRun("checkSuiteA", CheckSuiteStatus.Success, yesterday)),
           WithId("3", QcRun("checkSuiteA", CheckSuiteStatus.Success, twoDaysAgo))
         )
         for {
@@ -131,7 +131,7 @@ object QcResultRoutesSpec extends DefaultRunnableSpec with DockerTests {
         } yield assert(res.status)(equalTo(Status.Ok)) && assert(body)(equalTo(expectedQcRuns))
       } @@ timeout(Duration.ofSeconds(timeoutSecs)),
       testWithCleanIndexM(
-        "GET /qcresult/{documentId} should fetch only 1 QC result for the given documentId"
+        "GET /qcresults/{documentId} should fetch only 1 QC result for the given documentId"
       ) {
         val checkSuiteResults = List(
           WithId("1", ChecksSuiteResult(CheckSuiteStatus.Success, "checkSuiteA", Seq.empty, today, Map.empty)),
@@ -148,7 +148,7 @@ object QcResultRoutesSpec extends DefaultRunnableSpec with DockerTests {
           _ <- checkSuiteResults.traverse(repo.saveCheckSuiteResultWithId)
           res <-
             QcResultsRoutes.qcResultsRoutes.orNotFound
-              .run(Request(Method.GET, uri"/qcresult/2"))
+              .run(Request(Method.GET, uri"/qcresults/2"))
               .repeatUntil(
                 _.status == Status.Ok
               )
@@ -156,7 +156,7 @@ object QcResultRoutesSpec extends DefaultRunnableSpec with DockerTests {
         } yield assert(res.status)(equalTo(Status.Ok)) && assert(body)(equalTo(expectedChecksSuiteResult))
       } @@ timeout(Duration.ofSeconds(timeoutSecs)),
       testWithCleanIndexM(
-        "GET /qcresult/{documentId} should return a 404 if the given document id is not present"
+        "GET /qcresults/{documentId} should return a 404 if the given document id is not present"
       ) {
         val checkSuiteResults = List(
           WithId("1", ChecksSuiteResult(CheckSuiteStatus.Success, "checkSuiteA", Seq.empty, today, Map.empty)),
@@ -168,7 +168,7 @@ object QcResultRoutesSpec extends DefaultRunnableSpec with DockerTests {
           _ <- checkSuiteResults.traverse(repo.saveCheckSuiteResultWithId)
           res <-
             QcResultsRoutes.qcResultsRoutes.orNotFound
-              .run(Request(Method.GET, uri"/qcresult/notFoundId"))
+              .run(Request(Method.GET, uri"/qcresults/notFoundId"))
         } yield assert(res.status)(equalTo(Status.NotFound))
       } @@ timeout(Duration.ofSeconds(timeoutSecs)),
       testWithCleanIndexM("DELETE /qcresults should delete chosen QC Results") {

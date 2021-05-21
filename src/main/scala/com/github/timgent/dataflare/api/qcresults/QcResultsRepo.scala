@@ -71,7 +71,9 @@ object QcResultsRepo {
               res <-
                 client
                   .execute(
-                    search(esConfig.qcResultsIndex) matchQuery (QcRun.checkSuiteDescriptionField, description)
+                    search(
+                      esConfig.qcResultsIndex
+                    ) matchQuery (QcRun.checkSuiteDescriptionField, description) sortByFieldDesc QcRun.timestamp
                   )
                   .mapError(e => QcResultsRepoErr(s"Couldn't get QcRuns for ${QcRun.checkSuiteDescriptionField} = '$description'", Some(e)))
               checkSuiteResults = res.result.hits.hits.map(hit => WithId(hit.id, hit.to[QcRun])).toList
@@ -113,7 +115,7 @@ object QcResultsRepo {
             for {
               res <-
                 client
-                  .execute(search(esConfig.qcResultsIndex) query matchAllQuery)
+                  .execute(search(esConfig.qcResultsIndex) query matchAllQuery sortByFieldDesc QcRun.timestamp)
                   .mapError(e => QcResultsRepoErr("Couldn't get all CheckSuiteResults", Some(e)))
               checkSuiteResults = res.result.hits.hits.map(hit => WithId(hit.id, hit.to[ChecksSuiteResult])).toList
             } yield checkSuiteResults

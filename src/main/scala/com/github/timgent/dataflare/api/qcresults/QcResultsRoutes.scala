@@ -24,15 +24,13 @@ object QcResultsRoutes {
 
   val qcResultsRoutes = HttpRoutes
     .of[RIO[QcResultsRepo with Logging, *]] {
-      case GET -> Root / "qcresults" =>
-        QcResultsRepo.getAllCheckSuiteResults.foldM(logErrAndReturn500, Ok(_))
-      case GET -> Root / "qcresults" / "latest" =>
-        QcResultsRepo.getLatestQcs.foldM(logErrAndReturn500, Ok(_))
       case GET -> Root / "qcresults" :? CheckSuiteDescriptionParamMatcher(checkSuiteDescription) =>
         QcResultsRepo.getQcsByDescription(checkSuiteDescription).foldM(logErrAndReturn500, Ok(_))
+      case GET -> Root / "qcresults" / "latest" =>
+        QcResultsRepo.getLatestQcs.foldM(logErrAndReturn500, Ok(_))
       case DELETE -> Root / "qcresults" / id =>
         QcResultsRepo.deleteQcResult(id).foldM(logErrAndReturn500, Ok(_))
-      case GET -> Root / "qcresult" / id =>
+      case GET -> Root / "qcresults" / id =>
         QcResultsRepo
           .getChecksSuiteResult(id)
           .foldM(
@@ -47,6 +45,8 @@ object QcResultsRoutes {
           checksSuiteResult <- req.as[ChecksSuiteResult]
           res <- QcResultsRepo.saveChecksSuiteResult(checksSuiteResult).foldM(logErrAndReturn500, Ok(_))
         } yield res
+      case GET -> Root / "qcresults" =>
+        QcResultsRepo.getAllCheckSuiteResults.foldM(logErrAndReturn500, Ok(_))
     }
 
   private object CheckSuiteDescriptionParamMatcher extends QueryParamDecoderMatcher[String]("checkSuiteDescription")
