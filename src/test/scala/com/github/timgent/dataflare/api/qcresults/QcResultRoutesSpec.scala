@@ -6,6 +6,7 @@ import com.github.timgent.dataflare.api.qcresults.EntityEncoders.checksSuiteResu
 import com.github.timgent.dataflare.api.qcresults.QcResultsRepo.QcResultsRepo
 import com.github.timgent.dataflare.api.utils.{Mocks, WithId}
 import com.github.timgent.dataflare.checkssuite.{CheckSuiteStatus, ChecksSuiteResult}
+import com.github.timgent.dataflare.json.CustomEncodings.checksSuiteResultDecoder
 import com.sksamuel.elastic4s.testkit.DockerTests
 import org.http4s.circe.CirceEntityCodec.circeEntityDecoder
 import org.http4s.implicits.{http4sKleisliResponseSyntaxOptionT, http4sLiteralsSyntax}
@@ -13,7 +14,7 @@ import org.http4s.{Method, Request, Status}
 import zio.interop.catz.{monadErrorInstance, taskConcurrentInstance}
 import zio.logging.Logging
 import zio.random.Random
-import zio.test.Assertion.equalTo
+import zio.test.Assertion.{equalTo, hasSameElements}
 import zio.test.TestAspect.timeout
 import zio.test._
 import zio.test.environment.TestEnvironment
@@ -41,6 +42,7 @@ object QcResultRoutesSpec extends DefaultRunnableSpec with DockerTests {
         _ <- repo.delQcResultsIndex
         _ <- repo.createQcResultsIndex
         a <- assertion
+        _ <- repo.delQcResultsIndex
       } yield a
     }.provideCustomLayer(qcResultsRepo ++ Mocks.mockLogger ++ elasticSearch)
   }
@@ -48,7 +50,7 @@ object QcResultRoutesSpec extends DefaultRunnableSpec with DockerTests {
   val yesterday = LocalDateTime.now.minusDays(1).toInstant(ZoneOffset.UTC)
   val twoDaysAgo = LocalDateTime.now.minusDays(2).toInstant(ZoneOffset.UTC)
 
-  def spec = {
+  def spec =
     suite("QcResultRoutes")(
       testWithCleanIndexM("POST /qcresults should insert QC results to ElasticSearch") {
         val checkSuiteResultToSave = ChecksSuiteResult(CheckSuiteStatus.Success, "checkSuiteDescription", Seq.empty, Instant.now, Map.empty)
@@ -59,7 +61,7 @@ object QcResultRoutesSpec extends DefaultRunnableSpec with DockerTests {
               .map(_.status)
           repo <- ZIO.access[QcResultsRepo](_.get)
           dbResults <- repo.getAllCheckSuiteResults.repeatUntil(r => r.nonEmpty)
-        } yield assert(httpStatus)(equalTo(Status.Ok)) && assert(dbResults)(equalTo(List(checkSuiteResultToSave)))
+        } yield assert(httpStatus)(equalTo(Status.Ok)) && assert(dbResults.map(_.value))(hasSameElements(List(checkSuiteResultToSave)))
       } @@ timeout(Duration.ofSeconds(timeoutSecs)),
       testWithCleanIndexM("GET /qcresults/latest should fetch the latest QC result for each distinct checkSuiteDescription") {
         val checkSuiteResults = List(
@@ -79,10 +81,109 @@ object QcResultRoutesSpec extends DefaultRunnableSpec with DockerTests {
           res <-
             QcResultsRoutes.qcResultsRoutes.orNotFound
               .run(Request(Method.GET, uri"/qcresults/latest"))
-              .repeatUntilM(_.as[List[QcRun]].either.map(e => e.isRight && e.right.get.nonEmpty))
+              .repeatUntilM(_.as[List[QcRun]].either.map(e => e.isRight && e.right.get.size == expectedQcRuns.size))
           body <- res.as[List[WithId[QcRun]]]
         } yield assert(res.status)(equalTo(Status.Ok)) && assert(body)(equalTo(expectedQcRuns))
+      } @@ timeout(Duration.ofSeconds(timeoutSecs)),
+      testWithCleanIndexM("GET /qcresults should fetch all QC results") {
+        val checkSuiteResults = List(
+          WithId("1", ChecksSuiteResult(CheckSuiteStatus.Success, "checkSuiteA", Seq.empty, today, Map.empty)),
+          WithId("2", ChecksSuiteResult(CheckSuiteStatus.Success, "checkSuiteA", Seq.empty, yesterday, Map.empty)),
+          WithId("3", ChecksSuiteResult(CheckSuiteStatus.Success, "checkSuiteA", Seq.empty, twoDaysAgo, Map.empty)),
+          WithId("4", ChecksSuiteResult(CheckSuiteStatus.Success, "checkSuiteB", Seq.empty, twoDaysAgo, Map.empty)),
+          WithId("5", ChecksSuiteResult(CheckSuiteStatus.Error, "checkSuiteB", Seq.empty, yesterday, Map.empty))
+        )
+        for {
+          repo <- ZIO.access[QcResultsRepo](_.get)
+          _ <- checkSuiteResults.traverse(repo.saveCheckSuiteResultWithId)
+          res <-
+            QcResultsRoutes.qcResultsRoutes.orNotFound
+              .run(Request(Method.GET, uri"/qcresults"))
+              .repeatUntilM(_.as[List[ChecksSuiteResult]].either.map(e => e.isRight && e.right.get.size == checkSuiteResults.size))
+          body <- res.as[List[WithId[ChecksSuiteResult]]]
+        } yield assert(res.status)(equalTo(Status.Ok)) && assert(body)(hasSameElements(checkSuiteResults))
+      } @@ timeout(Duration.ofSeconds(timeoutSecs)),
+      testWithCleanIndexM(
+        "GET /qcresults?checkSuiteDescription=checkSuiteA should fetch only QC results for the given checkSuiteDescription"
+      ) {
+        val checkSuiteResults = List(
+          WithId("1", ChecksSuiteResult(CheckSuiteStatus.Success, "checkSuiteA", Seq.empty, yesterday, Map.empty)),
+          WithId("2", ChecksSuiteResult(CheckSuiteStatus.Success, "checkSuiteA", Seq.empty, today, Map.empty)),
+          WithId("3", ChecksSuiteResult(CheckSuiteStatus.Success, "checkSuiteA", Seq.empty, twoDaysAgo, Map.empty)),
+          WithId("4", ChecksSuiteResult(CheckSuiteStatus.Success, "checkSuiteB", Seq.empty, twoDaysAgo, Map.empty)),
+          WithId("5", ChecksSuiteResult(CheckSuiteStatus.Error, "checkSuiteB", Seq.empty, yesterday, Map.empty))
+        )
+        val expectedQcRuns = List( // order of results should be via timestamp, not ID
+          WithId("2", QcRun("checkSuiteA", CheckSuiteStatus.Success, today)),
+          WithId("1", QcRun("checkSuiteA", CheckSuiteStatus.Success, yesterday)),
+          WithId("3", QcRun("checkSuiteA", CheckSuiteStatus.Success, twoDaysAgo))
+        )
+        for {
+          repo <- ZIO.access[QcResultsRepo](_.get)
+          _ <- checkSuiteResults.traverse(repo.saveCheckSuiteResultWithId)
+          res <-
+            QcResultsRoutes.qcResultsRoutes.orNotFound
+              .run(Request(Method.GET, uri"/qcresults?checkSuiteDescription=checkSuiteA"))
+              .repeatUntilM(
+                _.as[List[QcRun]].either.map(maybeQcRun => maybeQcRun.isRight && maybeQcRun.right.get.size == expectedQcRuns.size)
+              )
+          body <- res.as[List[WithId[QcRun]]]
+        } yield assert(res.status)(equalTo(Status.Ok)) && assert(body)(equalTo(expectedQcRuns))
+      } @@ timeout(Duration.ofSeconds(timeoutSecs)),
+      testWithCleanIndexM(
+        "GET /qcresults/{documentId} should fetch only 1 QC result for the given documentId"
+      ) {
+        val checkSuiteResults = List(
+          WithId("1", ChecksSuiteResult(CheckSuiteStatus.Success, "checkSuiteA", Seq.empty, today, Map.empty)),
+          WithId("2", ChecksSuiteResult(CheckSuiteStatus.Success, "checkSuiteA", Seq.empty, yesterday, Map.empty)),
+          WithId("3", ChecksSuiteResult(CheckSuiteStatus.Success, "checkSuiteA", Seq.empty, twoDaysAgo, Map.empty)),
+          WithId("4", ChecksSuiteResult(CheckSuiteStatus.Success, "checkSuiteB", Seq.empty, twoDaysAgo, Map.empty)),
+          WithId("5", ChecksSuiteResult(CheckSuiteStatus.Error, "checkSuiteB", Seq.empty, yesterday, Map.empty))
+        )
+        val expectedChecksSuiteResult =
+          WithId("2", ChecksSuiteResult(CheckSuiteStatus.Success, "checkSuiteA", Seq.empty, yesterday, Map.empty))
+
+        for {
+          repo <- ZIO.access[QcResultsRepo](_.get)
+          _ <- checkSuiteResults.traverse(repo.saveCheckSuiteResultWithId)
+          res <-
+            QcResultsRoutes.qcResultsRoutes.orNotFound
+              .run(Request(Method.GET, uri"/qcresults/2"))
+              .repeatUntil(
+                _.status == Status.Ok
+              )
+          body <- res.as[WithId[ChecksSuiteResult]]
+        } yield assert(res.status)(equalTo(Status.Ok)) && assert(body)(equalTo(expectedChecksSuiteResult))
+      } @@ timeout(Duration.ofSeconds(timeoutSecs)),
+      testWithCleanIndexM(
+        "GET /qcresults/{documentId} should return a 404 if the given document id is not present"
+      ) {
+        val checkSuiteResults = List(
+          WithId("1", ChecksSuiteResult(CheckSuiteStatus.Success, "checkSuiteA", Seq.empty, today, Map.empty)),
+          WithId("2", ChecksSuiteResult(CheckSuiteStatus.Success, "checkSuiteA", Seq.empty, yesterday, Map.empty))
+        )
+
+        for {
+          repo <- ZIO.access[QcResultsRepo](_.get)
+          _ <- checkSuiteResults.traverse(repo.saveCheckSuiteResultWithId)
+          res <-
+            QcResultsRoutes.qcResultsRoutes.orNotFound
+              .run(Request(Method.GET, uri"/qcresults/notFoundId"))
+        } yield assert(res.status)(equalTo(Status.NotFound))
+      } @@ timeout(Duration.ofSeconds(timeoutSecs)),
+      testWithCleanIndexM("DELETE /qcresults should delete chosen QC Results") {
+        val checkSuiteResults = List(
+          WithId("1", ChecksSuiteResult(CheckSuiteStatus.Success, "checkSuiteA", Seq.empty, today, Map.empty)),
+          WithId("2", ChecksSuiteResult(CheckSuiteStatus.Success, "checkSuiteA", Seq.empty, yesterday, Map.empty))
+        )
+
+        for {
+          repo <- ZIO.access[QcResultsRepo](_.get)
+          _ <- checkSuiteResults.traverse(repo.saveCheckSuiteResultWithId)
+          _ <- repo.getAllCheckSuiteResults.repeatUntil(_.size == checkSuiteResults.size)
+          _ <- QcResultsRoutes.qcResultsRoutes.orNotFound.run(Request(Method.DELETE, uri"/qcresults" / "1"))
+          finalResults <- repo.getAllCheckSuiteResults.repeatUntil(_.size == checkSuiteResults.size - 1)
+        } yield assert(finalResults)(equalTo(checkSuiteResults.filter(_.id != "1")))
       } @@ timeout(Duration.ofSeconds(timeoutSecs))
     )
-  }
 }

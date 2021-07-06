@@ -7,7 +7,7 @@ import fs2.Stream
 import org.http4s.implicits._
 import org.http4s.server.blaze.BlazeServerBuilder
 import org.http4s.server.middleware.{CORS, CORSConfig, Logger}
-import zio.RIO
+import zio.{RIO, ZIO}
 import zio.logging.Logging
 
 import scala.concurrent.ExecutionContext.global

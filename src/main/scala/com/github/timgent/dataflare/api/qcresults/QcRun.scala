@@ -10,6 +10,7 @@ case class QcRun(checkSuiteDescription: String, overallStatus: CheckSuiteStatus,
 
 object QcRun {
   val checkSuiteDescriptionField = "checkSuiteDescription"
+  val timestamp = "timestamp"
   implicit val qcRunDecoder: Decoder[QcRun] = deriveDecoder[QcRun]
   implicit val qcRunEncoder: Encoder[QcRun] = deriveEncoder[QcRun]
 }
